@@ -7,51 +7,61 @@ from . import models, schemas, crud
 
 # ==========================================================
 # CRITICAL: CREACIÓN DE LA BASE DE DATOS Y TABLAS
-# Esta línea busca el archivo 'smat.db' y crea las tablas
-# definidas en models.py si es que aún no existen.
 # ==========================================================
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="SMAT Backend Profesional",
-    description="""
-    API robusta para la gestión y monitoreo de desastres naturales.
-    Permite la telemetría de sensores en tiempo real y el cálculo de niveles de riesgo.
-
-    **Entidades principales:**
-    * **Estaciones:** Puntos de monitoreo físico.
-    * **Lecturas:** Datos capturados por sensores.
-    * **Riesgos:** Análisis de criticidad basado en umbrales.
-    """,
+    description="API robusta para la gestión y monitoreo de desastres naturales.",
     version="1.0.0",
-    terms_of_service="http://unmsm.edu.pe/terms/",
-    contact={
-        "name": "Soporte Técnico SMAT - FISI",
-        "url": "http://fisi.unmsm.edu.pe",
-        "email": "desarrollo.smat@unmsm.edu.pe",
-},
-    license_info={
-        "name": "Apache 2.0",
-        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
-},
 )
-
-# Configuración de orígenes permitidos
-origins = ["*"] # En producción, especificar dominios reales
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+# --- RUTA DE AUTENTICACIÓN ---
+@app.post("/token", tags=["Seguridad"])
+async def login(datos: LoginRequest):
+    """
+    Ruta para validar usuario y contraseña.
+    """
+    if datos.username == "admin" and datos.password == "admin123":
+        return {
+            "access_token": "token-secreto-unmsm", 
+            "token_type": "bearer"
+        }
+    else:
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+# --- RUTAS DE ESTACIONES ---
+
+@app.get("/estaciones/", tags=["Gestión de Infraestructura"])
+def listar_estaciones(db: Session = Depends(get_db)):
+    """
+    IMPORTANTE: Retorna directamente la lista para que 
+    ApiService().fetchEstaciones() en Flutter no falle.
+    """
+    return db.query(models.EstacionDB).all()
+
 @app.post("/estaciones/", status_code=201, tags=["Gestión de Infraestructura"])
 def crear_estacion(estacion: schemas.EstacionCreate, db: Session = Depends(get_db)):
-    # Retornamos dentro de "data" para que el test 'assert response.json()["data"]' no falle
+    """
+    Crea una estación. Retorna el objeto dentro de 'data' 
+    para mantener compatibilidad con los tests del lab.
+    """
     db_estacion = crud.crear_estacion(db=db, estacion=estacion)
     return {"data": db_estacion}
+
+# --- RUTAS DE TELEMETRÍA Y ANÁLISIS ---
 
 @app.post("/lecturas/", status_code=201, tags=["Telemetría de Sensores"])
 def registrar_lectura(lectura: schemas.LecturaCreate, db: Session = Depends(get_db)):
@@ -59,10 +69,9 @@ def registrar_lectura(lectura: schemas.LecturaCreate, db: Session = Depends(get_
 
 @app.get("/estaciones/{id}/riesgo", tags=["Análisis de Riesgo"])
 def obtener_riesgo(id: int, db: Session = Depends(get_db)):
-    # Validación para el test de estación no encontrada
     estacion = db.query(models.EstacionDB).filter(models.EstacionDB.id == id).first()
     if not estacion:
-        raise HTTPException(status_code=404, detail="Estaciòn no encontrada")
+        raise HTTPException(status_code=404, detail="Estación no encontrada")
     return crud.get_riesgo_estacion(db, id)
 
 @app.get("/estaciones/{id}/historial", tags=["Reportes Históricos"])
