@@ -59,9 +59,6 @@ class ApiService {
       }),
     );
     
-    print("Status code: ${response.statusCode}");
-    print("Response body: ${response.body}");
-    
     return response.statusCode == 201 || response.statusCode == 200;
   }
 }
