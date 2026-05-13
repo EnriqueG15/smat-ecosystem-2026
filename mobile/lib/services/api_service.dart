@@ -32,13 +32,22 @@ class AuthService {
 }
 
 class ApiService {
+  // Versión mejorada con timeout y manejo de errores
   Future<List<Estacion>> fetchEstaciones() async {
-    final response = await http.get(Uri.parse('$baseUrl/estaciones/'));
-    if (response.statusCode == 200) {
-      List<dynamic> body = jsonDecode(response.body);
-      return body.map((item) => Estacion.fromJson(item)).toList();
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/estaciones/'))
+          .timeout(const Duration(seconds: 5)); // Evita esperas infinitas
+
+      if (response.statusCode == 200) {
+        List jsonResponse = json.decode(response.body);
+        return jsonResponse.map((data) => Estacion.fromJson(data)).toList();
+      } else {
+        throw Exception('Error del servidor: ${response.statusCode}');
+      }
+    } catch (e) {
+      // Esto evita que la App se cierre inesperadamente
+      throw Exception('No se pudo conectar con SMAT. ¿Está el servidor activo?');
     }
-    throw Exception('Error al cargar estaciones');
   }
 
   Future<bool> crearEstacion(String nombre, String ubicacion) async {
@@ -61,21 +70,28 @@ class ApiService {
     
     return response.statusCode == 201 || response.statusCode == 200;
   }
-}
 
-Future<List<Estacion>> fetchEstaciones() async {
-  try {
-    final response = await http.get(Uri.parse('$baseUrl/estaciones/'))
-      .timeout(const Duration(seconds: 5)); // Evita esperas infinitas
-
-  if (response.statusCode == 200) {
-    List jsonResponse = json.decode(response.body);
-    return jsonResponse.map((data) => Estacion.fromJson(data)).toList();
-  } else {
-  throw Exception('Error del servidor: ${response.statusCode}');
+  // Eliminar una estación
+  Future<bool> eliminarEstacion(int id) async {
+    final token = await AuthService().getToken();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/estaciones/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return response.statusCode == 200;
   }
-  } catch (e) {
-// Esto evita que la App se cierre inesperadamente
-    throw Exception('No se pudo conectar con SMAT. ¿Está el servidor activo?');
+
+  // Actualizar una estación existente
+  Future<bool> editarEstacion(int id, String nombre, String ubicacion) async {
+    final token = await AuthService().getToken();
+    final response = await http.put(
+      Uri.parse('$baseUrl/estaciones/$id'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'nombre': nombre, 'ubicacion': ubicacion}),
+    );
+    return response.statusCode == 200;
   }
 }

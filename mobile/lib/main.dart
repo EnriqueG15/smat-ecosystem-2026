@@ -13,14 +13,12 @@ class SMATApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      // 1 y 2. Lógica de Inicio y Redirección Automática
       home: FutureBuilder<String?>(
         future: AuthService().getToken(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          // Si hay token, abre HomePage. Si no, muestra LoginScreen.
           if (snapshot.hasData && snapshot.data != null) {
             return const HomePage();
           } else {
@@ -40,25 +38,62 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late Future<List<Estacion>> futureEstaciones;
+  final ApiService apiService = ApiService(); // Instancia para reutilizar en el CRUD
 
   @override
   void initState() {
     super.initState();
-    futureEstaciones = ApiService().fetchEstaciones();
+    futureEstaciones = apiService.fetchEstaciones();
   }
 
-  // Convertimos _refresh() a un Future<void> para sincronizarlo perfectamente con RefreshIndicator
   Future<void> _refresh() async {
     setState(() {
-      // Volvemos a disparar el Future para traer datos frescos
-      futureEstaciones = ApiService().fetchEstaciones();
+      futureEstaciones = apiService.fetchEstaciones();
     });
-    // Esperamos a que la petición termine para que el spinner de carga se oculte en el momento correcto
     try {
       await futureEstaciones;
-    } catch (_) {
-      // Los errores ya se manejan visualmente dentro del FutureBuilder principal
-    }
+    } catch (_) {}
+  }
+
+  // --- PASO 3: Método para mostrar el Diálogo de Edición ---
+  void _mostrarDialogoEdicion(Estacion estacion) {
+    final nombreCtrl = TextEditingController(text: estacion.nombre);
+    final ubicacionCtrl = TextEditingController(text: estacion.ubicacion);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Editar Estación"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nombreCtrl, decoration: const InputDecoration(labelText: "Nombre")),
+            TextField(controller: ubicacionCtrl, decoration: const InputDecoration(labelText: "Ubicación")),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("Cancelar")
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Llamada a la API para actualizar
+              bool ok = await apiService.editarEstacion(
+                estacion.id, 
+                nombreCtrl.text, 
+                ubicacionCtrl.text
+              );
+              if (ok && context.mounted) {
+                Navigator.pop(context);
+                _refresh(); // Refrescar la lista con los nuevos datos
+              }
+            },
+            child: const Text("Guardar"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -67,15 +102,13 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('SMAT - Monitoreo Móvil'),
         actions: [
-          // 3. Botón de Logout en la barra superior
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Cerrar Sesión',
             onPressed: () async {
-              await AuthService().logout(); // Borra el token
+              await AuthService().logout(); 
               if (!context.mounted) return;
               
-              // Redirige al Login borrando el historial de navegación
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
                 (route) => false,
@@ -98,10 +131,41 @@ class _HomePageState extends State<HomePage> {
                 itemCount: snapshot.data!.length,
                 itemBuilder: (context, index) {
                   final est = snapshot.data![index];
-                  return ListTile(
-                    leading: const Icon(Icons.satellite_alt),
-                    title: Text(est.nombre),
-                    subtitle: Text(est.ubicacion),
+                  
+                  // --- RETO DE LA FASE MOBILE: Lógica de Colores ---
+                  // Nota: Asegúrate de que tu modelo 'Estacion' tenga la propiedad del valor de lectura.
+                  // Aquí uso 'est.ultimoValor' como ejemplo. Cámbialo por el nombre real de tu variable.
+                  // Verde si es normal (< 50), Rojo si supera el umbral crítico (> 50).
+                  final double valorLectura = est.ultimoValor ?? 0.0; 
+                  final Color colorAlerta = (valorLectura < 50) ? Colors.green : Colors.red;
+
+                  // --- PASO 2: Envolver el ListTile en un Dismissible ---
+                  return Dismissible(
+                    key: Key(est.id.toString()), // Identificador único requerido
+                    direction: DismissDirection.endToStart, // Deslizar de derecha a izquierda
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (direction) async {
+                      // Ejecutar la eliminación en el backend
+                      bool ok = await apiService.eliminarEstacion(est.id);
+                      if (ok && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("${est.nombre} eliminada")),
+                        );
+                        // Opcional pero recomendado: sincronizar la vista
+                        _refresh();
+                      }
+                    },
+                    child: ListTile(
+                      leading: Icon(Icons.satellite_alt, color: colorAlerta), // Aplicamos color del Reto
+                      title: Text(est.nombre),
+                      subtitle: Text(est.ubicacion),
+                      onTap: () => _mostrarDialogoEdicion(est), // Gatillamos el Paso 3 al tocar
+                    ),
                   );
                 },
               ),
