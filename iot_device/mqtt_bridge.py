@@ -3,14 +3,14 @@ import requests
 import json
 import sys
 import time  
+import os
 
 MQTT_BROKER = "broker.hivemq.com"  #
 MQTT_PORT = 1883  #
-MQTT_TOPIC = "fisi/smat/estaciones/+/lecturas"  # El '+' es un wildcard para el ID de la estación
-API_URL = "http://localhost:8000/lecturas/"  #
+MQTT_TOPIC = "fisi/smat/estaciones/+/lecturas"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/lecturas/")
 
-# Token JWT generado previamente desde Swagger o la App móvil para el usuario administrador
-JWT_TOKEN = "eyJhbGciOiJIUzI1NilsInR5cCl6lkpXVCJ9..."  #
+JWT_TOKEN = os.environ.get("JWT_TOKEN", "eyJhbGciOiJIUzI1NilsInR5cCl6lkpXVCJ9...") 
 
 cache_estaciones = {}
 
